@@ -42,7 +42,27 @@ def get_metadata_columns(data_frame, column_name='metadata'):
         data_frame = pd.concat([data_frame.drop(columns=[column_name]), metadata_df], axis=1)
     return data_frame
 
+def summarize_output(query: str, pandas_code: str, output: str) -> str:
+    summarize_prompt = f"""
+    The user asked the following question: "{query}"
 
+    To answer this question, the following Pandas code in python was generated and executed:
+    {pandas_code}
+
+    The output of this code was:
+    {output}
+
+    Please provide a clear, concise summary that answers the user's question based on this information. 
+    The summary should be in plain language, avoiding technical jargon where possible. 
+    If there are any limitations or caveats to the answer based on the available data, please mention them briefly.
+    """
+
+    try:
+        response = call_openai(summarize_prompt)
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Error summary: {str(e)}"
+    
 def run_qa(file_path: str, query: str) -> str: 
     #FILE STUFF
     #check if file exists
@@ -129,12 +149,15 @@ def run_qa(file_path: str, query: str) -> str:
         exec(formatted_code, {}, local_scope)
         #retain only the output
         result_vars = {k: v for k, v in local_scope.items() if k not in ["data_frame"]}
-        for var_name, value in result_vars.items():
-            print(f"{var_name}: {value}")
+        # for var_name, value in result_vars.items():
+            # print(f"{var_name}: {value}")
+        output = "\n".join([f"{k}: {v}" for k, v in result_vars.items()])
+        summary = summarize_output(query, formatted_code, output)
+        print("\nSummarized Output: ", summary)
             
     except Exception as e:
         print(f"Error executing the query: {str(e)}")
 
 #example query
 run_qa('error_logs.json', 'What is the impact of latency on the occurrence of different error codes across all services?')
-# run_qa('member_info.json', 'What is the most common nationality?')
+# run_qa('member_info.json', 'Who referred the most number of members?')
