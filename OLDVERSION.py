@@ -3,8 +3,6 @@ from dotenv import load_dotenv, find_dotenv
 import os.path
 import pandas as pd
 from openai import OpenAI
-from tenacity import retry, stop_after_attempt, wait_exponential
-
 #load env
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -13,22 +11,16 @@ OpenAI.api_key = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI()
 
-#1st retry, 4 seconds, 2nd retry 1 * 2^2 (max 10 sec), 3rd 10 sec
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def call_openai(prompt:str) -> str:
-    try: 
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt}
-            ]
-        )
+    response = client.chat.completions.create(
+        model="gpt-4-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": prompt}
+        ]
+)
     # print(response.choices[0].message.content)
-        return response
-    except Exception as e:
-        print(f"Error calling OpenAI API: {str(e)}")
-        raise
+    return response
 
 #flatten a nested column in the dataframe if it exists.
 def get_metadata_columns(data_frame, column_name='metadata'):
@@ -42,27 +34,7 @@ def get_metadata_columns(data_frame, column_name='metadata'):
         data_frame = pd.concat([data_frame.drop(columns=[column_name]), metadata_df], axis=1)
     return data_frame
 
-def summarize_output(query: str, pandas_code: str, output: str) -> str:
-    summarize_prompt = f"""
-    The user asked the following question: "{query}"
 
-    To answer this question, the following Pandas code in python was generated and executed:
-    {pandas_code}
-
-    The output of this code was:
-    {output}
-
-    Please provide a clear, concise summary that answers the user's question based on this information. 
-    The summary should be in plain language, avoiding technical jargon where possible. 
-    If there are any limitations or caveats to the answer based on the available data, please mention them briefly.
-    """
-
-    try:
-        response = call_openai(summarize_prompt)
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"Error summary: {str(e)}"
-    
 def run_qa(file_path: str, query: str) -> str: 
     #FILE STUFF
     #check if file exists
@@ -121,19 +93,14 @@ def run_qa(file_path: str, query: str) -> str:
     #PROMPT GPT TO GENERATE A PANDAS QUERY TO ANSWER THE USER QUERY
     operation_prompt = f"""
     Based on the query: '{query}', generate the corresponding Pandas code to perform the operation on the columns: {column_names}.
-    Here is what the first few rows of the DataFrame look like:
-    {df_head}
-
     Assume that the DataFrame variable is called 'data_frame'.
     Please note:
     - Let's think step by step for each query
     - Any row can have a missing value in the column (nan)
     - Only use the column names that exist in the DataFrame.
+    - If the query involves calculating age from a date of birth (dob), calculate it by finding the difference in days and then divide by 365.25 to account for leap years. Do not attempt to convert a timedelta directly to years.
     - Ensure that the code is robust and handles potential edge cases (e.g., different date formats).
     - Do not include any print statements, and do not output any explanations. DO NOT DESCRIBE THE CODE. 
-    - Do not create any sample DataFrame for demonstration using the rows of the dataframe I included in this prompt, this query will later by executed on the data_frame variable
-    - Here are some synonyms for the column names: France = French 
-    - Whenever filtering for any particular column only use the ones avaliable in {column_names}
     - Lastly, for any queries dealing with error log dataframes, make sure the pandas query that is generated saves a new a csv file of the related dataframe.
     """
 
@@ -152,15 +119,12 @@ def run_qa(file_path: str, query: str) -> str:
         exec(formatted_code, {}, local_scope)
         #retain only the output
         result_vars = {k: v for k, v in local_scope.items() if k not in ["data_frame"]}
-        # for var_name, value in result_vars.items():
-            # print(f"{var_name}: {value}")
-        output = "\n".join([f"{k}: {v}" for k, v in result_vars.items()])
-        summary = summarize_output(query, formatted_code, output)
-        print("\nSummarized Output: ", summary)
+        for var_name, value in result_vars.items():
+            print(f"{var_name}: {value}")
             
     except Exception as e:
         print(f"Error executing the query: {str(e)}")
 
 #example query
-# run_qa('error_logs.json', 'Which users are most frequently encountering errors, and what are the most common stack traces they experience?')
-run_qa('member_info.json', 'Who referred the most number of members?')
+# run_qa('error_logs.json', 'What is the correlation between retry attempts and stack trace error frequency in authentication failures?')
+run_qa('member_info.json', 'What is the average height of members from France?')
