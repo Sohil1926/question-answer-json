@@ -13,7 +13,7 @@ client = OpenAI()
 
 def call_openai(prompt:str) -> str:
     response = client.chat.completions.create(
-        model="gpt-4-turbo",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": prompt}
@@ -128,5 +128,5 @@ def run_qa(file_path: str, query: str) -> str:
         print(f"Error executing the query: {str(e)}")
 
 #example query
-run_qa('error_logs.json', 'What is the correlation between retry attempts and stack trace error frequency in authentication failures?')
-# run_qa('member_info.json', 'Who referred the most number of members?')
+# run_qa('error_logs.json', 'What is the correlation between retry attempts and stack trace error frequency in authentication failures?')
+run_qa('member_info.json', 'Who referred the most number of members?')
