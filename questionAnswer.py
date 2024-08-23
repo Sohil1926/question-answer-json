@@ -3,6 +3,8 @@ from dotenv import load_dotenv, find_dotenv
 import os.path
 import pandas as pd
 from openai import OpenAI
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 #load env
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -11,16 +13,22 @@ OpenAI.api_key = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI()
 
+#1st retry, 4 seconds, 2nd retry 1 * 2^2 (max 10 sec), 3rd 10 sec
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def call_openai(prompt:str) -> str:
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": prompt}
-        ]
-)
+    try: 
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ]
+        )
     # print(response.choices[0].message.content)
-    return response
+        return response
+    except Exception as e:
+        print(f"Error calling OpenAI API: {str(e)}")
+        raise
 
 #flatten a nested column in the dataframe if it exists.
 def get_metadata_columns(data_frame, column_name='metadata'):
@@ -128,5 +136,5 @@ def run_qa(file_path: str, query: str) -> str:
         print(f"Error executing the query: {str(e)}")
 
 #example query
-# run_qa('error_logs.json', 'What is the correlation between retry attempts and stack trace error frequency in authentication failures?')
-run_qa('member_info.json', 'Who referred the most number of members?')
+run_qa('error_logs.json', 'What is the impact of latency on the occurrence of different error codes across all services?')
+# run_qa('member_info.json', 'What is the most common nationality?')
